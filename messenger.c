@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <signal.h>
+
+volatile sig_atomic_t exit_flag = 0;
 
 bool starting_position(int read_fd, int write_fd)
 {
@@ -31,6 +34,11 @@ bool starting_position(int read_fd, int write_fd)
     return current_pid > other_pid; // We are the top => we write first
 }
 
+void handle_exit_signal(int signum) 
+{
+    exit_flag = 1;
+}
+
 int main(int argc, char *argv[])
 {
     // Create channels
@@ -38,9 +46,8 @@ int main(int argc, char *argv[])
     mknod(argv[2], S_IFIFO | 0666, 0);
 
     srand(getpid()); // Ensure messages differ
-
+    signal(SIGINT, handle_exit_signal);
     int read_fd, write_fd;
-
     if ((read_fd = open(argv[1], O_RDONLY | O_NONBLOCK)) < 0)
     {
         printf("Can\'t open FIFO to read from!\n");
@@ -53,11 +60,12 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+
     fcntl(read_fd, F_SETFL, fcntl(read_fd, F_GETFL) & (~O_NONBLOCK));
 
     bool is_writer = starting_position(read_fd, write_fd);
 
-    while (1)
+    while (!exit_flag)
     {
         if (is_writer)
         {
@@ -81,6 +89,13 @@ int main(int argc, char *argv[])
 
             printf("Read message: %d\n", message);
 
+            if (message == 999999999)
+            {
+                printf("LUCKY NUMBER\n");
+                exit(0);
+            }
+
+
             if (read_bytes != sizeof(int))
             {
                 printf("Can\'t read message!\n");
@@ -89,7 +104,6 @@ int main(int argc, char *argv[])
         }
 
         sleep(1);
-        is_writer = !is_writer;
     }
 
     close(read_fd);
